@@ -114,7 +114,7 @@ client.login(process.env.DISCORD_BOT_TOKEN);
 function startAutoCheck() {
   const channelId = process.env.ALERT_CHANNEL_ID;
   const userID = process.env.ALERT_CHANNEL_ID;
-  const interval = 10 * 1000; // 1 minute
+  const interval = 60 * 1000; // 1 minute
 
   setInterval(async () => {
     if (!channelId) {

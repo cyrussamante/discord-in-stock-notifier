@@ -16,7 +16,7 @@ async function scrapeProduct(url : string) {
       title,
       price,
       link: url,
-      inStock: true,
+      inStock: !!price,
     };
   } catch (error) {
     console.error("Scraping error:", error);
