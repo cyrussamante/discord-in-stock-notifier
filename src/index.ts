@@ -1,4 +1,11 @@
 import { Client, Events, GatewayIntentBits, TextChannel } from "discord.js";
+import {
+  connectToDB,
+  getTrackedProducts,
+  addTrackedProduct,
+  removeTrackedProduct,
+  type TrackedProduct,
+} from "./db"; // <-- import MongoDB helpers
 const scrapeProduct = require("./scraper");
 
 const client = new Client({
@@ -9,15 +16,12 @@ const client = new Client({
   ],
 });
 
-interface TrackedProduct {
-  url: string;
-  lastInStock: boolean;
-}
-
 let trackedProducts: TrackedProduct[] = [];
 
-client.once(Events.ClientReady, () => {
+client.once(Events.ClientReady, async () => {
   console.log(`Logged in as ${client.user?.tag}`);
+  await connectToDB();
+  trackedProducts = await getTrackedProducts();
   startAutoCheck();
 });
 
@@ -69,7 +73,8 @@ client.on(Events.MessageCreate, async (message) => {
       return message.channel.send("⚠️ This URL is already being tracked.");
     }
 
-    trackedProducts.push({ url, lastInStock: false });
+    await addTrackedProduct(url);
+    trackedProducts = await getTrackedProducts();
     message.channel.send(`✅ Added product to tracking list:\n${url}`);
   }
 
@@ -77,22 +82,22 @@ client.on(Events.MessageCreate, async (message) => {
     if (trackedProducts.length === 0) {
       return message.channel.send("📭 No products are currently being tracked.");
     }
-  
+
     let listMessage = "🛒 Currently tracked products:\n";
-  
-    // Fetch latest status for each
+
     for (let i = 0; i < trackedProducts.length; i++) {
       const product = trackedProducts[i];
-      if (!product) continue;
+      if (!product) {
+        continue;
+      }
       const { url } = product;
       const data = await scrapeProduct(url);
       const status = data?.inStock ? "✅ In Stock" : "❌ Out of Stock";
       listMessage += `\n${i + 1}. ${status} - ${url}`;
     }
-  
+
     message.channel.send(listMessage);
   }
-  
 
   if (command === "!remove") {
     const index = parseInt(args[1] ?? "", 10);
@@ -100,12 +105,13 @@ client.on(Events.MessageCreate, async (message) => {
       return message.channel.send("❌ Invalid index. Use `!list` to view tracked products.");
     }
 
-    const removed = trackedProducts.splice(index - 1, 1)[0];
-    if (removed) {
-      message.channel.send(`🗑️ Removed product from tracking list:\n${removed.url}`);
-    } else {
-      message.channel.send("❌ Failed to remove product. Please try again.");
+    const removed = trackedProducts[index - 1];
+    if (!removed) {
+      return message.channel.send("❌ Invalid index. Use `!list` to view tracked products.");
     }
+    await removeTrackedProduct(removed.url);
+    trackedProducts = await getTrackedProducts();
+    message.channel.send(`🗑️ Removed product from tracking list:\n${removed.url}`);
   }
 });
 
@@ -113,12 +119,11 @@ client.login(process.env.DISCORD_BOT_TOKEN);
 
 function startAutoCheck() {
   const channelId = process.env.ALERT_CHANNEL_ID;
-  const userID = process.env.ALERT_CHANNEL_ID;
   const interval = 60 * 1000; // 1 minute
 
   setInterval(async () => {
     if (!channelId) {
-      console.error("ALERT_CHANNEL_ID is not defined in the environment variables.");
+      console.error("Missing ALERT_CHANNEL_ID in .env");
       return;
     }
 
@@ -133,13 +138,15 @@ function startAutoCheck() {
       if (!data) continue;
 
       if (!product.lastInStock && data.inStock) {
-        (channel as TextChannel).send(`🚨 @everyone - **${data.title}** is now IN STOCK for ${data.price}!\n${data.link}`);
+        (channel as TextChannel).send(
+          `@everyone - 🟢 **${data.title}** is now IN STOCK for ${data.price}!\n${data.link}`
+        );
       } else if (product.lastInStock && !data.inStock) {
         (channel as TextChannel).send(
           `@everyone - 🔴 **${data.title}** is now OUT OF STOCK.\n${data.link}`
         );
       }
-      
+
       product.lastInStock = data.inStock;
     }
   }, interval);
