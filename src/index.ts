@@ -6,6 +6,7 @@ import {
   removeTrackedProduct,
   type TrackedProduct,
 } from "./db"; // <-- import MongoDB helpers
+import "./server";
 const scrapeProduct = require("./scraper");
 
 const client = new Client({
